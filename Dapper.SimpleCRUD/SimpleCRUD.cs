@@ -21,6 +21,7 @@ namespace Dapper
             SetDialect(_dialect);
         }
 
+        #region Member variables
         private static Dialect _dialect = Dialect.SQLServer;
         private static string _encapsulation;
         private static string _getIdentitySql;
@@ -34,28 +35,14 @@ namespace Dapper
 
         private static ITableNameResolver _tableNameResolver = new TableNameResolver();
         private static IColumnNameResolver _columnNameResolver = new ColumnNameResolver();
-
-        /// <summary>
-        /// Append a Cached version of a strinbBuilderAction result based on a cacheKey
-        /// </summary>
-        /// <param name="sb"></param>
-        /// <param name="cacheKey"></param>
-        /// <param name="stringBuilderAction"></param>
-        private static void StringBuilderCache(StringBuilder sb, string cacheKey, Action<StringBuilder> stringBuilderAction)
+        private static HashSet<Type> supportedType = new HashSet<Type>
         {
-            if (StringBuilderCacheEnabled && StringBuilderCacheDict.TryGetValue(cacheKey, out string value))
-            {
-                sb.Append(value);
-                return;
-            }
+            typeof(int), typeof(uint), typeof(long), typeof(ulong),
+            typeof(short), typeof(ushort), typeof(Guid), typeof(string)
+        };
+        #endregion
 
-            StringBuilder newSb = new StringBuilder();
-            stringBuilderAction(newSb);
-            value = newSb.ToString();
-            StringBuilderCacheDict.AddOrUpdate(cacheKey, value, (t, v) => value);
-            sb.Append(value);
-        }
-        
+        #region Public Getters and Setters
         /// <summary>
         /// Returns the current dialect name
         /// </summary>
@@ -129,6 +116,9 @@ namespace Dapper
         {
             _columnNameResolver = resolver;
         }
+        #endregion
+
+        #region Public Methods
 
         /// <summary>
         /// <para>By default queries the table matching the class name</para>
@@ -180,6 +170,64 @@ namespace Dapper
 
             return connection.Query<T>(sb.ToString(), dynParms, transaction, true, commandTimeout).FirstOrDefault();
         }
+
+        /// <summary>
+        /// <para>By default queries the table matching the class name</para>
+        /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
+        /// <para>By default filters on composite key's columns</para>
+        /// <para>-he 'compositeKeys' argument is mandatory and must contain at least one element."</para>
+        /// <para>-The entity must have at least one column decorated with the CompositeKey attribute.</para>
+        /// <para>Supports transaction and command timeout</para>
+        /// <para>Returns a single entity by a single id from table T</para>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="connection"></param>
+        /// <param name="compositeKey"></param>
+        /// <param name="transaction"></param>
+        /// <param name="commandTimeout"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        public static T GetByCompositeKey<T>(this IDbConnection connection, object keyValues, IDbTransaction transaction = null, int? commandTimeout = null)
+        {
+            if (keyValues == null)
+                throw new ArgumentNullException(nameof(keyValues));
+
+            var currenttype = typeof(T);
+            var keyProperties = GetCompositeKeyProperties(currenttype).ToList();
+
+            if (!keyProperties.Any())
+                throw new ArgumentException($"Composite key not defined for type {typeof(T).Name}");
+
+            var name = GetTableName(currenttype);
+            var sb = new StringBuilder();
+            sb.Append("Select ");
+            //create a new empty instance of the type to get the base properties
+            BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
+            sb.AppendFormat(" from {0} where ", name);
+
+            for (var i = 0; i < keyProperties.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append(" and ");
+                sb.AppendFormat("{0} = @{1}", GetColumnName(keyProperties[i]), keyProperties[i].Name);
+            }
+
+            var dynParms = new DynamicParameters();
+            foreach (var k in keyProperties)
+                dynParms.Add("@" + k.Name, keyValues.GetType().GetProperty(k.Name).GetValue(keyValues, null));
+
+            if (Debugger.IsAttached)
+            {
+                string debugString = string.Format("Get<{0}>: {1} with", currenttype, sb);
+                for (var i = 0; i < keyProperties.Count; i++)
+                {
+                    sb.AppendFormat("<0>: <1>", GetColumnName(keyProperties[i]), keyValues.GetType().GetProperty(keyProperties[i].Name).GetValue(keyValues, null));
+                }
+                Trace.WriteLine(debugString);
+            }
+            return connection.Query<T>(sb.ToString(), dynParms, transaction, true, commandTimeout).FirstOrDefault();
+        }
+
 
         /// <summary>
         /// <para>By default queries the table matching the class name</para>
@@ -359,9 +407,9 @@ namespace Dapper
             if (typeof(TEntity).IsInterface) //FallBack to BaseType Generic Method : https://stackoverflow.com/questions/4101784/calling-a-generic-method-with-a-dynamic-type
             {
                 return (TKey)typeof(SimpleCRUD)
-                    .GetMethods().Where(methodInfo=>methodInfo.Name == nameof(Insert) && methodInfo.GetGenericArguments().Count()==2).Single()
+                    .GetMethods().Where(methodInfo => methodInfo.Name == nameof(Insert) && methodInfo.GetGenericArguments().Count() == 2).Single()
                     .MakeGenericMethod(new Type[] { typeof(TKey), entityToInsert.GetType() })
-                    .Invoke(null, new object[] { connection,entityToInsert,transaction,commandTimeout });
+                    .Invoke(null, new object[] { connection, entityToInsert, transaction, commandTimeout });
             }
             var idProps = GetIdProperties(entityToInsert).ToList();
 
@@ -372,7 +420,7 @@ namespace Dapper
             var baseType = typeof(TKey);
             var underlyingType = Nullable.GetUnderlyingType(baseType);
             var keytype = underlyingType ?? baseType;
-            if (keytype != typeof(int) && keytype != typeof(uint) && keytype != typeof(long) && keytype != typeof(ulong) && keytype != typeof(short) && keytype != typeof(ushort) && keytype != typeof(Guid) && keytype != typeof(string))
+            if (!supportedType.Contains(keytype))
             {
                 throw new Exception("Invalid return type");
             }
@@ -425,6 +473,73 @@ namespace Dapper
         }
 
         /// <summary>
+        /// <para>Inserts a row into the database, using ONLY the properties defined by TEntity</para>
+        /// <para>By default inserts into the table matching the class name</para>
+        /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
+        /// <para>Insert filters out any columns with the [CompositeKey] attribute</para>
+        /// <para>Properties marked with attribute [Editable(false)] and complex types are ignored</para>
+        /// <para>Supports transaction and command timeout</para>
+        /// <para>Returns a ValueTuple with composite keys of the newly inserted record if it is identity using the defined type, otherwise null</para>
+        /// </summary>
+        /// <param name="connection"></param>
+        /// <param name="entityToInsert"></param>
+        /// <param name="transaction"></param>
+        /// <param name="commandTimeout"></param>
+        /// <returns>A ValueTuple with composite keys of the newly inserted record if it is identity using the defined type, otherwise null</returns>
+        public static TKey InsertByCompositeKey<TKey, TEntity>(this IDbConnection connection, TEntity entityToInsert, IDbTransaction transaction = null, int? commandTimeout = null) where TKey : struct
+        {
+            if (!typeof(TKey).IsValueType || !typeof(TKey).FullName.StartsWith("System.ValueTuple"))
+            {
+                throw new ArgumentException($"InsertByCompositeKey<T> supports only composite keys as ValueTuple.");
+            }
+
+            if (typeof(TEntity).IsInterface) //FallBack to BaseType Generic Method : https://stackoverflow.com/questions/4101784/calling-a-generic-method-with-a-dynamic-type
+            {
+                return (TKey)typeof(SimpleCRUD)
+                    .GetMethods().Where(methodInfo => methodInfo.Name == nameof(Insert) && methodInfo.GetGenericArguments().Count() == 2).Single()
+                    .MakeGenericMethod(new Type[] { typeof(TKey), entityToInsert.GetType() })
+                    .Invoke(null, new object[] { connection, entityToInsert, transaction, commandTimeout });
+            }
+
+            var compositeKeyProps = GetCompositeKeyProperties(entityToInsert).ToList();
+
+            if (!compositeKeyProps.Any())
+                throw new ArgumentException("InsertByCompositeKey<T> supports only entities that have at least one [CompositeKey] attribute");
+
+
+            var tupleTypes = typeof(TKey).GetGenericArguments();
+
+            foreach (var type in tupleTypes)
+            {
+                var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
+                if (!supportedType.Contains(underlyingType))
+                {
+                    throw new Exception($"Invalid type '{underlyingType}' in composite key.");
+                }
+            }
+
+            var name = GetTableName(entityToInsert);
+            var sb = new StringBuilder();
+            sb.AppendFormat("insert into {0}", name);
+            sb.Append(" (");
+            BuildInsertParameters<TEntity>(sb);
+            sb.Append(") ");
+            sb.Append("values");
+            sb.Append(" (");
+            BuildInsertValues<TEntity>(sb);
+            sb.Append(")");
+
+            if (Debugger.IsAttached)
+                Trace.WriteLine(String.Format("Insert: {0}", sb));
+
+            var r = connection.Query(sb.ToString(), entityToInsert, transaction, true, commandTimeout);
+
+            var values = compositeKeyProps.Select(p => (object)p.GetValue(entityToInsert)).ToArray();
+
+            return BuildValueTuple<TKey>(values);
+        }
+
+        /// <summary>
         /// <para>Updates a record or records in the database with only the properties of TEntity</para>
         /// <para>By default updates records in the table matching the class name</para>
         /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
@@ -451,9 +566,11 @@ namespace Dapper
             StringBuilderCache(masterSb, $"{typeof(TEntity).FullName}_Update", sb =>
             {
                 var idProps = GetIdProperties(entityToUpdate).ToList();
+                var keyProperties = GetCompositeKeyProperties(entityToUpdate).ToList();
+                var allKeys = new HashSet<PropertyInfo>().Union(idProps).Union(keyProperties);
 
-                if (!idProps.Any())
-                    throw new ArgumentException("Entity must have at least one [Key] or Id property");
+                if (!allKeys.Any())
+                    throw new ArgumentException("Entity must have at least one [Key], Id or [CompositeKey] property");
 
                 var name = GetTableName(entityToUpdate);
 
@@ -462,7 +579,7 @@ namespace Dapper
                 sb.AppendFormat(" set ");
                 BuildUpdateSet(entityToUpdate, sb);
                 sb.Append(" where ");
-                BuildWhere<TEntity>(sb, idProps, entityToUpdate);
+                BuildWhere<TEntity>(sb, allKeys, entityToUpdate);
 
                 if (Debugger.IsAttached)
                     Trace.WriteLine(String.Format("Update: {0}", sb));
@@ -490,16 +607,18 @@ namespace Dapper
             {
 
                 var idProps = GetIdProperties(entityToDelete).ToList();
+                var keyProperties = GetCompositeKeyProperties(entityToDelete).ToList();
+                var allKeys = new HashSet<PropertyInfo>().Union(idProps).Union(keyProperties);
 
-                if (!idProps.Any())
-                    throw new ArgumentException("Entity must have at least one [Key] or Id property");
+                if (!allKeys.Any())
+                    throw new ArgumentException("Entity must have at least one [Key], Id or [CompositeKey] property");
 
                 var name = GetTableName(entityToDelete);
 
                 sb.AppendFormat("delete from {0}", name);
 
                 sb.Append(" where ");
-                BuildWhere<T>(sb, idProps, entityToDelete);
+                BuildWhere<T>(sb, allKeys, entityToDelete);
 
                 if (Debugger.IsAttached)
                     Trace.WriteLine(String.Format("Delete: {0}", sb));
@@ -553,6 +672,46 @@ namespace Dapper
 
             if (Debugger.IsAttached)
                 Trace.WriteLine(String.Format("Delete<{0}> {1}", currenttype, sb));
+
+            return connection.Execute(sb.ToString(), dynParms, transaction, commandTimeout);
+        }
+
+        public static int DeleteByCompositeKey<T>(this IDbConnection connection, object keyValues, IDbTransaction transaction = null, int? commandTimeout = null)
+        {
+            if (keyValues == null)
+                throw new ArgumentNullException(nameof(keyValues));
+
+            var currenttype = typeof(T);
+            var compositeKeyProps = GetCompositeKeyProperties(currenttype).ToList();
+
+            if (!compositeKeyProps.Any())
+                throw new ArgumentException("DeleteByCompositeKey<T> only supports an entity with a [CompositeKey] attribute");
+
+            var name = GetTableName(currenttype);
+
+            var sb = new StringBuilder();
+            sb.AppendFormat("Delete from {0} where ", name);
+
+            for (var i = 0; i < compositeKeyProps.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append(" and ");
+                sb.AppendFormat("{0} = @{1}", GetColumnName(compositeKeyProps[i]), compositeKeyProps[i].Name);
+            }
+
+            var dynParms = new DynamicParameters();
+            foreach (var k in compositeKeyProps)
+                dynParms.Add("@" + k.Name, keyValues.GetType().GetProperty(k.Name).GetValue(keyValues, null));
+
+            if (Debugger.IsAttached)
+            {
+                string debugString = string.Format("DeleteByCompositeKey<{0}>: {1} with", currenttype, sb);
+                for (var i = 0; i < compositeKeyProps.Count; i++)
+                {
+                    sb.AppendFormat("<0>: <1>", GetColumnName(compositeKeyProps[i]), keyValues.GetType().GetProperty(compositeKeyProps[i].Name).GetValue(keyValues, null));
+                }
+                Trace.WriteLine(debugString);
+            }
 
             return connection.Execute(sb.ToString(), dynParms, transaction, commandTimeout);
         }
@@ -694,6 +853,30 @@ namespace Dapper
                 Trace.WriteLine(String.Format("RecordCount<{0}>: {1}", currenttype, sb));
 
             return connection.ExecuteScalar<int>(sb.ToString(), whereConditions, transaction, commandTimeout);
+        }
+
+        #endregion
+
+        #region Builders
+        /// <summary>
+        /// Append a Cached version of a strinbBuilderAction result based on a cacheKey
+        /// </summary>
+        /// <param name="sb"></param>
+        /// <param name="cacheKey"></param>
+        /// <param name="stringBuilderAction"></param>
+        private static void StringBuilderCache(StringBuilder sb, string cacheKey, Action<StringBuilder> stringBuilderAction)
+        {
+            if (StringBuilderCacheEnabled && StringBuilderCacheDict.TryGetValue(cacheKey, out string value))
+            {
+                sb.Append(value);
+                return;
+            }
+
+            StringBuilder newSb = new StringBuilder();
+            stringBuilderAction(newSb);
+            value = newSb.ToString();
+            StringBuilderCacheDict.AddOrUpdate(cacheKey, value, (t, v) => value);
+            sb.Append(value);
         }
 
         //build update statement based on list on an entity
@@ -843,6 +1026,27 @@ namespace Dapper
             });
         }
 
+        private static T BuildValueTuple<T>(object[] values)
+        {
+            if (!typeof(T).FullName.StartsWith("System.ValueTuple"))
+            {
+                throw new InvalidOperationException("The return type must be a ValueTuple.");
+            }
+
+            var tupleTypes = typeof(T).GetGenericArguments();
+            var constructor = typeof(T).GetConstructor(tupleTypes);
+
+            if (constructor == null)
+            {
+                throw new InvalidOperationException("Unable to create ValueTuple with the specified types.");
+            }
+
+            return (T)constructor.Invoke(values);
+        }
+        #endregion
+
+        #region Private Getters
+
         //Get all properties in an entity
         private static IEnumerable<PropertyInfo> GetAllProperties<T>(T entity) where T : class
         {
@@ -909,6 +1113,8 @@ namespace Dapper
             updateableProperties = updateableProperties.Where(p => !p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase));
             //remove ones with key attribute
             updateableProperties = updateableProperties.Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(KeyAttribute).Name) == false);
+            //remove ones with composite attribute
+            updateableProperties = updateableProperties.Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(CompositeKeyAttribute).Name) == false);
             //remove ones that are readonly
             updateableProperties = updateableProperties.Where(p => p.GetCustomAttributes(true).Any(attr => (attr.GetType().Name == typeof(ReadOnlyAttribute).Name) && IsReadOnly(p)) == false);
             //remove ones with IgnoreUpdate attribute
@@ -928,11 +1134,25 @@ namespace Dapper
         }
 
         //Get all properties that are named Id or have the Key attribute
+        //For Inserts and updates we have a whole entity so this method is used
+        private static IEnumerable<PropertyInfo> GetCompositeKeyProperties(object entity)
+        {
+            var type = entity.GetType();
+            return GetCompositeKeyProperties(type);
+        }
+
+        //Get all properties that are named Id or have the Key attribute
         //For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
         private static IEnumerable<PropertyInfo> GetIdProperties(Type type)
         {
             var tp = type.GetProperties().Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(KeyAttribute).Name)).ToList();
             return tp.Any() ? tp : type.GetProperties().Where(p => p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase));
+        }
+
+        //Get all properties that have the Composite Key attribute
+        private static IEnumerable<PropertyInfo> GetCompositeKeyProperties(Type type)
+        {
+            return type.GetProperties().Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(CompositeKeyAttribute).Name)).ToList();
         }
 
         //Gets the table name for this entity
@@ -975,7 +1195,9 @@ namespace Dapper
 
             return columnName;
         }
+        #endregion
 
+        #region Utils
         private static string Encapsulate(string databaseword)
         {
             return string.Format(_encapsulation, databaseword);
@@ -998,7 +1220,9 @@ namespace Dapper
             bytes[4] = (byte)time.Second;
             return new Guid(bytes);
         }
+        #endregion
 
+        #region Enumerators
         /// <summary>
         /// Database server dialects
         /// </summary>
@@ -1011,7 +1235,9 @@ namespace Dapper
             Oracle,
             DB2
         }
+        #endregion
 
+        #region Interfaces
         public interface ITableNameResolver
         {
             string ResolveTableName(Type type);
@@ -1021,7 +1247,9 @@ namespace Dapper
         {
             string ResolveColumnName(PropertyInfo propertyInfo);
         }
+        #endregion
 
+        #region Concrete Classes
         public class TableNameResolver : ITableNameResolver
         {
             public virtual string ResolveTableName(Type type)
@@ -1084,8 +1312,11 @@ namespace Dapper
                 return columnName;
             }
         }
+        #endregion
+
     }
 
+    #region Attributes Definition
     /// <summary>
     /// Optional Table attribute.
     /// You can use the System.ComponentModel.DataAnnotations version in its place to specify the table name of a poco
@@ -1140,6 +1371,16 @@ namespace Dapper
     public class KeyAttribute : Attribute
     {
     }
+
+    /// <summary>
+    /// Optional composite Key attribute.
+    /// You can use the System.ComponentModel.DataAnnotations version in its place to specify the Primary Key of a poco
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    public class CompositeKeyAttribute : Attribute
+    {
+    }
+
 
     /// <summary>
     /// Optional NotMapped attribute.
@@ -1227,6 +1468,7 @@ namespace Dapper
     public class IgnoreUpdateAttribute : Attribute
     {
     }
+    #endregion
 
 }
 
@@ -1264,6 +1506,6 @@ internal static class TypeExtension
 
     public static string CacheKey(this IEnumerable<PropertyInfo> props)
     {
-        return string.Join(",",props.Select(p=> p.DeclaringType.FullName + "." + p.Name).ToArray());
+        return string.Join(",", props.Select(p => p.DeclaringType.FullName + "." + p.Name).ToArray());
     }
 }
