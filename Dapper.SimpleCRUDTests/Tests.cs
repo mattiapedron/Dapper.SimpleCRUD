@@ -1574,5 +1574,91 @@ namespace Dapper.SimpleCRUDTests
             }
         }
 
+        public void TestGetByCompositeKeyThrowAnException()
+        {
+            Orders order = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 2500,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            try
+            {
+                using (var connection = GetOpenConnection())
+                {
+                    var compositeKeys = connection.GetByCompositeKey<Orders>(new { TenantId = 1 });
+                }
+
+                throw new Exception("Assert condition failed");
+            }
+            catch (ArgumentException ex)
+            {
+                if (!ex.Message.Equals("The following composite keys were not specified: OrderId\r\n"))
+                {
+                    throw ex;
+                }
+            }
+        }
+
+        public void TestDeleteByCompositeKey()
+        {
+            Orders expectedOrder = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 3001,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            using (var connection = GetOpenConnection())
+            {
+                if (connection.RecordCount<Orders>(new { TenantId = expectedOrder.TenantId, OrderId = expectedOrder.OrderId }) == 0)
+                {
+                    connection.InsertByCompositeKey<ValueTuple<int, int>, Orders>(expectedOrder);
+                }
+                int recordAffected = connection.DeleteByCompositeKey<Orders>(new { TenantId = expectedOrder.TenantId, OrderId = expectedOrder.OrderId });
+                if (recordAffected != 1)
+                {
+                    throw new Exception("Assert condition failed");
+                }
+            }
+        }
+
+        public void TestDeleteByCompositeKeyThrowAnException()
+        {
+            Orders order = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 2500,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            try
+            {
+                using (var connection = GetOpenConnection())
+                {
+                    int recordAffected = connection.DeleteByCompositeKey<Orders>(new { TenantId = 1 });
+                }
+
+                throw new Exception("Assert condition failed");
+            }
+            catch (ArgumentException ex)
+            {
+                if (!ex.Message.Equals("The following composite keys were not specified: OrderId\r\n"))
+                {
+                    throw ex;
+                }
+            }
+        }
+
     }
 }

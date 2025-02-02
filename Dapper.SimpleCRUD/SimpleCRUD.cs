@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Xml;
 using Microsoft.CSharp.RuntimeBinder;
 
 namespace Dapper
@@ -175,10 +176,10 @@ namespace Dapper
         /// <para>By default queries the table matching the class name</para>
         /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
         /// <para>By default filters on composite key's columns</para>
-        /// <para>-he 'compositeKeys' argument is mandatory and must contain at least one element."</para>
+        /// <para>-The 'compositeKeys' argument is mandatory and must contains all composite key attribute defined in the entity</para>
         /// <para>-The entity must have at least one column decorated with the CompositeKey attribute.</para>
         /// <para>Supports transaction and command timeout</para>
-        /// <para>Returns a single entity by a single id from table T</para>
+        /// <para>Returns a single entity by a single composite key from table T</para>
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="connection"></param>
@@ -193,10 +194,12 @@ namespace Dapper
                 throw new ArgumentNullException(nameof(keyValues));
 
             var currenttype = typeof(T);
-            var keyProperties = GetCompositeKeyProperties(currenttype).ToList();
+            var compositeKeyProps = GetCompositeKeyProperties(currenttype).ToList();
 
-            if (!keyProperties.Any())
+            if (!compositeKeyProps.Any())
                 throw new ArgumentException($"Composite key not defined for type {typeof(T).Name}");
+
+            ValidateCompositeKeysConsistency(compositeKeyProps, keyValues.GetType().GetProperties().ToList());
 
             var name = GetTableName(currenttype);
             var sb = new StringBuilder();
@@ -205,23 +208,23 @@ namespace Dapper
             BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
             sb.AppendFormat(" from {0} where ", name);
 
-            for (var i = 0; i < keyProperties.Count; i++)
+            for (var i = 0; i < compositeKeyProps.Count; i++)
             {
                 if (i > 0)
                     sb.Append(" and ");
-                sb.AppendFormat("{0} = @{1}", GetColumnName(keyProperties[i]), keyProperties[i].Name);
+                sb.AppendFormat("{0} = @{1}", GetColumnName(compositeKeyProps[i]), compositeKeyProps[i].Name);
             }
 
             var dynParms = new DynamicParameters();
-            foreach (var k in keyProperties)
+            foreach (var k in compositeKeyProps)
                 dynParms.Add("@" + k.Name, keyValues.GetType().GetProperty(k.Name).GetValue(keyValues, null));
 
             if (Debugger.IsAttached)
             {
                 string debugString = string.Format("Get<{0}>: {1} with", currenttype, sb);
-                for (var i = 0; i < keyProperties.Count; i++)
+                for (var i = 0; i < compositeKeyProps.Count; i++)
                 {
-                    debugString += string.Format("<0>: <1>", GetColumnName(keyProperties[i]), keyValues.GetType().GetProperty(keyProperties[i].Name).GetValue(keyValues, null));
+                    debugString += string.Format("<0>: <1>", GetColumnName(compositeKeyProps[i]), keyValues.GetType().GetProperty(compositeKeyProps[i].Name).GetValue(keyValues, null));
                 }
                 Trace.WriteLine(debugString);
             }
@@ -506,7 +509,6 @@ namespace Dapper
             if (!compositeKeyProps.Any())
                 throw new ArgumentException("InsertByCompositeKey<T> supports only entities that have at least one [CompositeKey] attribute");
 
-
             var tupleTypes = typeof(TKey).GetGenericArguments();
 
             foreach (var type in tupleTypes)
@@ -566,11 +568,11 @@ namespace Dapper
             StringBuilderCache(masterSb, $"{typeof(TEntity).FullName}_Update", sb =>
             {
                 var idProps = GetIdProperties(entityToUpdate).ToList();
-                var keyProperties = GetCompositeKeyProperties(entityToUpdate).ToList();
-                var allKeys = new HashSet<PropertyInfo>().Union(idProps).Union(keyProperties);
+                var compositeKeysProps = GetCompositeKeyProperties(entityToUpdate).ToList();
+                var allKeysProps = new HashSet<PropertyInfo>().Union(idProps).Union(compositeKeysProps);
 
-                if (!allKeys.Any())
-                    throw new ArgumentException("Entity must have at least one [Key], Id or [CompositeKey] property");
+                if (!allKeysProps.Any())
+                    throw new ArgumentException("Entity must have at least one [Key], [CompositeKey] or Id property");
 
                 var name = GetTableName(entityToUpdate);
 
@@ -579,7 +581,7 @@ namespace Dapper
                 sb.AppendFormat(" set ");
                 BuildUpdateSet(entityToUpdate, sb);
                 sb.Append(" where ");
-                BuildWhere<TEntity>(sb, allKeys, entityToUpdate);
+                BuildWhere<TEntity>(sb, allKeysProps, entityToUpdate);
 
                 if (Debugger.IsAttached)
                     Trace.WriteLine(String.Format("Update: {0}", sb));
@@ -676,6 +678,20 @@ namespace Dapper
             return connection.Execute(sb.ToString(), dynParms, transaction, commandTimeout);
         }
 
+        /// <summary>
+        /// <para>Deletes a record or records in the database by composite keys</para>
+        /// <para>By default deletes records in the table matching the class name</para>
+        /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
+        /// <para>Deletes records where the [CompositeKey] attribute match those in the database</para>
+        /// <para>The number of records affected</para>
+        /// <para>Supports transaction and command timeout</para>
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="connection"></param>
+        /// <param name="keyValues"></param>
+        /// <param name="transaction"></param>
+        /// <param name="commandTimeout"></param>
+        /// <returns>The number of records affected</returns>
         public static int DeleteByCompositeKey<T>(this IDbConnection connection, object keyValues, IDbTransaction transaction = null, int? commandTimeout = null)
         {
             if (keyValues == null)
@@ -686,6 +702,8 @@ namespace Dapper
 
             if (!compositeKeyProps.Any())
                 throw new ArgumentException("DeleteByCompositeKey<T> only supports an entity with a [CompositeKey] attribute");
+
+            ValidateCompositeKeysConsistency(compositeKeyProps, keyValues.GetType().GetProperties().ToList());
 
             var name = GetTableName(currenttype);
 
@@ -708,7 +726,7 @@ namespace Dapper
                 string debugString = string.Format("DeleteByCompositeKey<{0}>: {1} with", currenttype, sb);
                 for (var i = 0; i < compositeKeyProps.Count; i++)
                 {
-                    sb.AppendFormat("<0>: <1>", GetColumnName(compositeKeyProps[i]), keyValues.GetType().GetProperty(compositeKeyProps[i].Name).GetValue(keyValues, null));
+                    debugString += string.Format("<0>: <1>", GetColumnName(compositeKeyProps[i]), keyValues.GetType().GetProperty(compositeKeyProps[i].Name).GetValue(keyValues, null));
                 }
                 Trace.WriteLine(debugString);
             }
@@ -1219,6 +1237,32 @@ namespace Dapper
             bytes[5] = (byte)time.Minute;
             bytes[4] = (byte)time.Second;
             return new Guid(bytes);
+        }
+
+        private static void ValidateCompositeKeysConsistency(IEnumerable<PropertyInfo> entityCompositeKeyProps, IEnumerable<PropertyInfo> compositeKeyValues)
+        {
+            var entityKeysSet = new HashSet<string>(entityCompositeKeyProps.Select(e => e.Name));
+            var compositeKeysValueSet = new HashSet<string>(compositeKeyValues.Select(u => u.Name));
+
+            var missingKeys = entityKeysSet.Except(compositeKeysValueSet);
+            var extraKeys = compositeKeysValueSet.Except(entityKeysSet);
+
+            if (missingKeys.Any() || extraKeys.Any())
+            {
+                var errorMessage = new StringBuilder();
+
+                if (missingKeys.Any())
+                {
+                    errorMessage.AppendLine($"The following composite keys were not specified: {string.Join(", ", missingKeys)}");
+                }
+
+                if (extraKeys.Any())
+                {
+                    errorMessage.AppendLine($"The following composite keys were specified but not defined: {string.Join(", ", extraKeys)}");
+                }
+
+                throw new ArgumentException(errorMessage.ToString());
+            }
         }
         #endregion
 
