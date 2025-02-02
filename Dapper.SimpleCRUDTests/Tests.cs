@@ -1660,5 +1660,74 @@ namespace Dapper.SimpleCRUDTests
             }
         }
 
+        public void TestUpdateByCompositeKey()
+        {
+            Orders insertedOrder = new Orders()
+            {
+                TenantId = 2,
+                OrderId = 3001,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            Orders updatingOrder = new Orders()
+            {
+                TenantId = 2,
+                OrderId = 3001,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 2,
+                AdditionalInfo = "I'm a test!"
+            };
+
+
+            using (var connection = GetOpenConnection())
+            {
+                if (connection.RecordCount<Orders>(new { TenantId = insertedOrder.TenantId, OrderId = insertedOrder.OrderId }) == 0)
+                {
+                    connection.InsertByCompositeKey<ValueTuple<int, int>, Orders>(insertedOrder);
+                }
+                int recordAffected = connection.Update<Orders>(updatingOrder);
+                if (recordAffected != 1)
+                {
+                    throw new Exception("Assert condition failed - Row affected isn't one!");
+                }
+                var actualUpdatedRecord = connection.GetByCompositeKey<Orders>(new { TenantId = insertedOrder.TenantId, OrderId = insertedOrder.OrderId });
+                if (actualUpdatedRecord == null)
+                    throw new Exception("Assert condition failed - Updated Composite Key!");
+
+                if (actualUpdatedRecord.TenantId != updatingOrder.TenantId || actualUpdatedRecord.OrderId != updatingOrder.OrderId ||
+                    actualUpdatedRecord.ProductName != updatingOrder.ProductName || actualUpdatedRecord.ProductQuantity != updatingOrder.ProductQuantity ||
+                    actualUpdatedRecord.AdditionalInfo != updatingOrder.AdditionalInfo)
+                {
+                    throw new Exception("Assert condition failed");
+                }
+            }
+        }
+
+        public void TestUpdateByCompositeKeyZeroRecordAffected()
+        {
+            Orders order = new Orders()
+            {
+                TenantId = 5,
+                OrderId = 2500,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            using (var connection = GetOpenConnection())
+            {
+                int recordAffected = connection.Update<Orders>(order);
+                if (recordAffected != 0)
+                {
+                    throw new Exception("Assert condition failed - Zero record affected");
+                }
+            }
+        }
+
     }
 }
