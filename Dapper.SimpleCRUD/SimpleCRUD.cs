@@ -221,7 +221,7 @@ namespace Dapper
                 string debugString = string.Format("Get<{0}>: {1} with", currenttype, sb);
                 for (var i = 0; i < keyProperties.Count; i++)
                 {
-                    sb.AppendFormat("<0>: <1>", GetColumnName(keyProperties[i]), keyValues.GetType().GetProperty(keyProperties[i].Name).GetValue(keyValues, null));
+                    debugString += string.Format("<0>: <1>", GetColumnName(keyProperties[i]), keyValues.GetType().GetProperty(keyProperties[i].Name).GetValue(keyValues, null));
                 }
                 Trace.WriteLine(debugString);
             }

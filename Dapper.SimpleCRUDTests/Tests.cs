@@ -178,7 +178,27 @@ namespace Dapper.SimpleCRUDTests
         [Key, Required]
         public int Key2 { get; set; }
     }
-
+    [Table("Orders")]
+    public class Orders
+    {
+        [CompositeKey]
+        [Column("TenantId")]
+        public int TenantId { get; set; }
+        [CompositeKey]
+        [Column("OrderId")]
+        public int OrderId { get; set; }
+        [Required]
+        [Column("CustomerName")]
+        public string CustomerName { get; set; }
+        [Required]
+        [Column("ProductName")]
+        public string ProductName { get; set; }
+        [Required]
+        [Column("ProductQuantity")]
+        public int ProductQuantity { get; set; }
+        [Column("AdditionalInfo")]
+        public string AdditionalInfo { get; set; }
+    }
     #endregion
 
     public class Tests
@@ -1467,6 +1487,90 @@ namespace Dapper.SimpleCRUDTests
                 allColumnDapper.IgnoreAll.IsNull();
 
                 connection.Delete<IgnoreColumns>(itemId);
+            }
+        }
+
+        public void TestInsertWithCompositeKey()
+        {
+
+            Orders order = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 2500,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            using (var connection = GetOpenConnection())
+            {
+                var compositeKeys = connection.InsertByCompositeKey<ValueTuple<int,int>,Orders>(order);
+                compositeKeys.Item1.Equals(order.TenantId);
+                compositeKeys.Item2.Equals(order.OrderId);
+            }
+        }
+
+        public void TestInsertWithCompositeKeyThrowAnException()
+        {
+
+            Orders order = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 2500,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            try
+            {
+                using (var connection = GetOpenConnection())
+                {
+                    var compositeKeys = connection.InsertByCompositeKey<int, Orders>(order);
+                }
+
+                throw new Exception("Assert condition failed");
+            }
+            catch (ArgumentException ex)
+            {
+                if (!ex.Message.Equals("InsertByCompositeKey<T> supports only composite keys as ValueTuple."))
+                {
+                    throw ex;
+                }
+            }
+        }
+
+        public void TestGetByCompositeKey()
+        {
+            Orders expectedOrder = new Orders()
+            {
+                TenantId = 1,
+                OrderId = 3001,
+                CustomerName = "Microsoft",
+                ProductName = "Dapper.SimpleCRUD",
+                ProductQuantity = 1,
+                AdditionalInfo = "I'm a test!"
+            };
+
+            using (var connection = GetOpenConnection())
+            {
+                if (connection.RecordCount<Orders>(new { TenantId = expectedOrder.TenantId, OrderId = expectedOrder.OrderId }) == 0)
+                {
+                    connection.InsertByCompositeKey<ValueTuple<int, int>, Orders>(expectedOrder);
+                }
+                var actualOrder = connection.GetByCompositeKey<Orders>(new { TenantId = expectedOrder.TenantId, OrderId = expectedOrder.OrderId });
+                if (actualOrder == null)
+                {
+                    throw new Exception("Assert condition failed");
+                }
+                if (actualOrder.TenantId != expectedOrder.TenantId || actualOrder.OrderId != expectedOrder.OrderId ||
+                    actualOrder.ProductName != expectedOrder.ProductName || actualOrder.ProductQuantity != expectedOrder.ProductQuantity ||
+                    actualOrder.AdditionalInfo != expectedOrder.AdditionalInfo)
+                {
+                    throw new Exception("Assert condition failed");
+                }
             }
         }
 

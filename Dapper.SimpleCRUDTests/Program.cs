@@ -4,6 +4,7 @@ using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using IBM.Data.DB2.Core;
 using MySql.Data.MySqlClient;
 using Npgsql;
@@ -69,6 +70,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Execute(@" CREATE TABLE GradingScale ([ScaleID] [int] IDENTITY(1,1) NOT NULL, [AppID] [int] NULL, [ScaleName] [nvarchar](50) NOT NULL, [IsDefault] [bit] NOT NULL)");
                 connection.Execute(@" CREATE TABLE KeyMaster ([Key1] [int] NOT NULL, [Key2] [int] NOT NULL, CONSTRAINT [PK_KeyMaster] PRIMARY KEY CLUSTERED ([Key1] ASC, [Key2] ASC))");
                 connection.Execute(@" CREATE TABLE [dbo].[stringtest]([stringkey] [varchar](50) NOT NULL,[name] [varchar](50) NOT NULL, CONSTRAINT [PK_stringkey] PRIMARY KEY CLUSTERED ([stringkey] ASC))");
+                connection.Execute(@" CREATE TABLE [dbo].[Orders]([TenantId] INT NOT NULL, [OrderId] [INT] NOT NULL,[CustomerName] [varchar](50) NOT NULL,[ProductName] [varchar](50) NOT NULL,[ProductQuantity] [INT] NOT NULL,[AdditionalInfo] [varchar](50) NULL CONSTRAINT [PK_Orders] PRIMARY KEY CLUSTERED ([TenantId],[OrderId] ASC))");
 
             }
             Console.WriteLine("Created database");
@@ -164,6 +166,7 @@ namespace Dapper.SimpleCRUDTests
                 var testwatch = Stopwatch.StartNew();
                 Console.Write("Running " + method.Name + " in sql server");
                 method.Invoke(sqltester, null);
+                Thread.Sleep(150);  //Avoid DeadLock
                 testwatch.Stop();
                 Console.WriteLine(" - OK! {0}ms", testwatch.ElapsedMilliseconds);
             }
