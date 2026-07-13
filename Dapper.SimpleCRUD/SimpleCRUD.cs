@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
@@ -857,43 +857,28 @@ namespace Dapper
 
             props = props.Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(EditableAttribute).Name && !IsEditable(p)) == false);
 
-
-            return props.Where(p => p.PropertyType.IsSimpleType() || IsEditable(p));
+            return props.Where(p => 
+                p.PropertyType.IsSimpleType() 
+                || IsEditable(p) 
+                || IsDefinedColumn(p));
         }
 
         //Determine if the Attribute has an AllowEdit key and return its boolean state
-        //fake the funk and try to mimic EditableAttribute in System.ComponentModel.DataAnnotations 
-        //This allows use of the DataAnnotations property in the model and have the SimpleCRUD engine just figure it out without a reference
         private static bool IsEditable(PropertyInfo pi)
         {
-            var attributes = pi.GetCustomAttributes(false);
-            if (attributes.Length > 0)
-            {
-                dynamic write = attributes.FirstOrDefault(x => x.GetType().Name == typeof(EditableAttribute).Name);
-                if (write != null)
-                {
-                    return write.AllowEdit;
-                }
-            }
-            return false;
+            return pi.GetAttributeNamed(typeof(Dapper.EditableAttribute).Name)?.AllowEdit ?? false;
+        }
+            
+        private static bool IsDefinedColumn(PropertyInfo pi)
+        {
+            return pi.GetAttributeNamed(typeof(Dapper.ColumnAttribute).Name) != null
+                || pi.GetAttributeNamed(typeof(Dapper.KeyAttribute).Name) != null;
         }
 
-
         //Determine if the Attribute has an IsReadOnly key and return its boolean state
-        //fake the funk and try to mimic ReadOnlyAttribute in System.ComponentModel 
-        //This allows use of the DataAnnotations property in the model and have the SimpleCRUD engine just figure it out without a reference
         private static bool IsReadOnly(PropertyInfo pi)
         {
-            var attributes = pi.GetCustomAttributes(false);
-            if (attributes.Length > 0)
-            {
-                dynamic write = attributes.FirstOrDefault(x => x.GetType().Name == typeof(ReadOnlyAttribute).Name);
-                if (write != null)
-                {
-                    return write.IsReadOnly;
-                }
-            }
-            return false;
+            return pi.GetAttributeNamed(typeof(Dapper.ReadOnlyAttribute).Name)?.IsReadOnly ?? false;
         }
 
         //Get all properties that are:
@@ -1260,6 +1245,14 @@ internal static class TypeExtension
                                    typeof(byte[])
                                };
         return simpleTypes.Contains(type) || type.IsEnum;
+    }
+    
+    //fake the funk and try to mimic EditableAttribute in System.ComponentModel.DataAnnotations 
+    //This allows use of the DataAnnotations property in the model and have the SimpleCRUD engine just figure it out without a reference
+    public static dynamic GetAttributeNamed(this PropertyInfo pi, string typeName)
+    {
+        return pi.GetCustomAttributes(false)?
+            .FirstOrDefault(x => x.GetType().Name == typeName);
     }
 
     public static string CacheKey(this IEnumerable<PropertyInfo> props)
