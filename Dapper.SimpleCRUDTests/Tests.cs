@@ -1,14 +1,12 @@
-﻿using System.ComponentModel;
+using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.Diagnostics;
-using System.Linq;
-using System.Collections.Generic;
-using System;
 using System.Data.SQLite;
+using System.Linq;
+using IBM.Data.DB2.Core;
 using MySql.Data.MySqlClient;
 using Npgsql;
-using IBM.Data.DB2.Core;
 
 namespace Dapper.SimpleCRUDTests
 {
@@ -171,6 +169,17 @@ namespace Dapper.SimpleCRUDTests
         public string Name { get; set; }
         public int Age { get; set; }
     }
+
+    [Table("UsersWithOffice")]
+    public class UserWithOffice
+    {
+        [Key]
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public int Age { get; set; }
+        public OfficeId? Office { get; set; }
+    }
+
     public class KeyMaster
     {
         [Key, Required]
@@ -421,6 +430,58 @@ namespace Dapper.SimpleCRUDTests
                 var user = connection.GetList<User>("where Age > @Age", new { Age = 10 });
                 user.Count().IsEqualTo(1);
                 connection.Execute("Delete from Users");
+            }
+        }
+        
+        public void Tests_Insert_GetList_WithOfficeId()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId1", Office = null });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId2", Office = new OfficeId(123) });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId3", Office = new OfficeId(123) });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId4", Office = new OfficeId(456) });
+
+                var users = connection.GetList<UserWithOffice>(new { Office = new OfficeId(123) }).ToList();
+                users.Count.IsEqualTo(2);
+
+                users[0].Office.HasValue.IsTrue();
+                users[0].Office.Value.Id.IsEqualTo(123);
+
+                connection.Execute("Delete from UsersWithOffice");
+            }
+        }
+        
+        public void Tests_Update_Get_WithOfficeId()
+        {
+            int user1Id = 0;
+            using (var connection = GetOpenConnection())
+            {
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId1", Office = null });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId2", Office = new OfficeId(123) });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId3", Office = new OfficeId(123) });
+                connection.Insert(new UserWithOffice { Name = "TestsGetListWithOfficeId4", Office = new OfficeId(456) });
+
+                var userCount = connection.RecordCount<UserWithOffice>();
+                userCount.IsEqualTo(4);
+
+                var user1 = connection.GetList<UserWithOffice>(new { Name = "TestsGetListWithOfficeId1" }).FirstOrDefault();
+                user1.Name.IsEqualTo("TestsGetListWithOfficeId1");
+                user1.Office.IsNull();
+                user1Id = user1.Id;
+
+                user1.Office = new OfficeId(999);
+                connection.Update(user1);
+            }
+            
+            using (var connection = GetOpenConnection())
+            {
+                var user1again = connection.Get<UserWithOffice>(user1Id);
+                user1again.Name.IsEqualTo("TestsGetListWithOfficeId1");
+                user1again.Office.HasValue.IsTrue();
+                user1again.Office.Value.Id.IsEqualTo(999);
+
+                connection.Execute("Delete from UsersWithOffice");
             }
         }
 

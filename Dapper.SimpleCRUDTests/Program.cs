@@ -57,6 +57,7 @@ namespace Dapper.SimpleCRUDTests
             {
                 connection.Open();
                 connection.Execute(@" create table Users (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime DEFAULT(getdate())) ");
+                connection.Execute(@" create table UsersWithOffice (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null, Office int null) ");
                 connection.Execute(@" create table Car (CarId int IDENTITY(1,1) not null, Id int null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table BigCar (CarId bigint IDENTITY(2147483650,1) not null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table City (Name nvarchar(100) not null, Population int not null) ");
@@ -72,6 +73,9 @@ namespace Dapper.SimpleCRUDTests
 
             }
             Console.WriteLine("Created database");
+
+            Dapper.SqlMapper.AddTypeHandler(new OfficeId.MapperTypeHandler());
+
         }
 
         private static void SetupPg()
@@ -112,6 +116,7 @@ namespace Dapper.SimpleCRUDTests
             {
                 connection.Open();
                 connection.Execute(@" create table Users (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime default current_timestamp ) ");
+                connection.Execute(@" create table UsersWithOffice (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name nvarchar(100) not null, Age int not null, Office int null) ");
                 connection.Execute(@" create table Car (CarId INTEGER PRIMARY KEY AUTOINCREMENT, Id INTEGER null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table BigCar (CarId INTEGER PRIMARY KEY AUTOINCREMENT, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" insert into BigCar (CarId,Make,Model) Values (2147483649,'car','car') ");

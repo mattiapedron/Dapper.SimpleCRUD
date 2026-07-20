@@ -55,7 +55,7 @@ namespace Dapper
             StringBuilderCacheDict.AddOrUpdate(cacheKey, value, (t, v) => value);
             sb.Append(value);
         }
-        
+
         /// <summary>
         /// Returns the current dialect name
         /// </summary>
@@ -857,9 +857,10 @@ namespace Dapper
 
             props = props.Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(EditableAttribute).Name && !IsEditable(p)) == false);
 
-            return props.Where(p => 
-                p.PropertyType.IsSimpleType() 
-                || IsEditable(p) 
+            return props.Where(p =>
+                p.PropertyType.IsSimpleType()
+                || IsEditable(p)
+                || IsConvertible(p)
                 || IsDefinedColumn(p));
         }
 
@@ -868,7 +869,16 @@ namespace Dapper
         {
             return pi.GetAttributeNamed(typeof(Dapper.EditableAttribute).Name)?.AllowEdit ?? false;
         }
-            
+
+        // a property that is `IConvertible` can be in the SELECT and the value then converted appropriately 
+        private static bool IsConvertible(PropertyInfo pi)
+        {
+            var propertyType = Nullable.GetUnderlyingType(pi.PropertyType) ?? pi.PropertyType;
+            return _convertible.IsAssignableFrom(propertyType);
+        }
+
+        private static readonly Type _convertible = typeof(IConvertible);
+
         private static bool IsDefinedColumn(PropertyInfo pi)
         {
             return pi.GetAttributeNamed(typeof(Dapper.ColumnAttribute).Name) != null
@@ -1246,7 +1256,7 @@ internal static class TypeExtension
                                };
         return simpleTypes.Contains(type) || type.IsEnum;
     }
-    
+
     //fake the funk and try to mimic EditableAttribute in System.ComponentModel.DataAnnotations 
     //This allows use of the DataAnnotations property in the model and have the SimpleCRUD engine just figure it out without a reference
     public static dynamic GetAttributeNamed(this PropertyInfo pi, string typeName)
