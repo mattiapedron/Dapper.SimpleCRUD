@@ -12,7 +12,7 @@ namespace Dapper.SimpleCRUDTests
 {
     class Program
     {
-        public const string SQLServerName = @".\sqlexpress";
+        public const string SQLServerName = @"localhost";
 
         static void Main()
         {
