@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
   <metadata>
     <id>Dapper.SimpleCRUD</id>
-    <version>2.3.0.0</version>
+    <version>2.4.0-beta1</version>
     <title>Dapper.SimpleCRUD</title>
     <authors>Eric Coffman</authors>
     <owners>Eric Coffman</owners>
@@ -15,7 +15,7 @@
 	  By default uses Id column as the primary key but this can be overridden with an attribute
 	  By default queries the table matching the class name but this can be overridden with an attribute
           By default queries the column matching the property name but this can be overridden with an attribute  
-          - Supports SQL Server, PostgreSQL, and MySQL 
+          - Supports SQL Server, PostgreSQL, MySQL, SQLite, and DB2
           - Includes async methods
           - Supports .Net Core
     </description>
@@ -51,13 +51,14 @@
 	* version 2.1.0 Speed improvements (thanks jonathanlarouche)
 	* version 2.2.0 Dapper 2.x support
 	* version 2.3.0 Update DB2 support (mvaz77), Interface support (jonathanlarouche)
+	* version 2.4.0 Updated NuGet packages (Dapper 2.1.79). Added opt-in column inclusion via [Key]/[Column] attributes (davethieben). Added support for custom IConvertible ID types via a TypeHandler (jonathanlarouche).
 	</releaseNotes>
-    <copyright>Copyright Eric Coffman 2019</copyright>
+    <copyright>Copyright Eric Coffman 2026</copyright>
     <tags>orm dapper micro-orm CRUD</tags>
     <dependencies>	  
 	  <group targetFramework=".NETStandard2.0">
-        <dependency id="Microsoft.CSharp" version="4.4.0" />
-		<dependency id="Dapper" version="2.0.78" />
+        <dependency id="Microsoft.CSharp" version="4.7.0" />
+		<dependency id="Dapper" version="2.1.79" />
 	  </group>    
     </dependencies>
 	

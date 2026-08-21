@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
@@ -40,7 +40,7 @@ namespace Dapper.SimpleCRUDTests
 
         private static void Setup()
         {
-            using (var connection = new SqlConnection($@"Data Source={SQLServerName};Initial Catalog=Master;Integrated Security=True"))
+            using (var connection = new SqlConnection($@"Data Source={SQLServerName};Initial Catalog=Master;Integrated Security=True;TrustServerCertificate=True"))
             {
                 connection.Open();
                 try
@@ -53,7 +53,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Execute(@" CREATE DATABASE DapperSimpleCrudTestDb; ");
             }
 
-            using (var connection = new SqlConnection($@"Data Source ={SQLServerName};Initial Catalog=DapperSimpleCrudTestDb;Integrated Security=True"))
+            using (var connection = new SqlConnection($@"Data Source ={SQLServerName};Initial Catalog=DapperSimpleCrudTestDb;Integrated Security=True;TrustServerCertificate=True"))
             {
                 connection.Open();
                 connection.Execute(@" create table Users (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime DEFAULT(getdate())) ");
@@ -177,7 +177,7 @@ namespace Dapper.SimpleCRUDTests
             // Write result
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
 
-            using (var connection = new SqlConnection($@"Data Source={SQLServerName};Initial Catalog=Master;Integrated Security=True"))
+            using (var connection = new SqlConnection($@"Data Source={SQLServerName};Initial Catalog=Master;Integrated Security=True;TrustServerCertificate=True"))
             {
                 connection.Open();
                 try
