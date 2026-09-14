@@ -38,27 +38,6 @@ namespace Dapper
         private static IColumnNameResolver _columnNameResolver = new ColumnNameResolver();
 
         /// <summary>
-        /// Append a Cached version of a strinbBuilderAction result based on a cacheKey
-        /// </summary>
-        /// <param name="sb"></param>
-        /// <param name="cacheKey"></param>
-        /// <param name="stringBuilderAction"></param>
-        private static void StringBuilderCache(StringBuilder sb, string cacheKey, Action<StringBuilder> stringBuilderAction)
-        {
-            if (StringBuilderCacheEnabled && StringBuilderCacheDict.TryGetValue(cacheKey, out string value))
-            {
-                sb.Append(value);
-                return;
-            }
-
-            StringBuilder newSb = new StringBuilder();
-            stringBuilderAction(newSb);
-            value = newSb.ToString();
-            StringBuilderCacheDict.AddOrUpdate(cacheKey, value, (t, v) => value);
-            sb.Append(value);
-        }
-
-        /// <summary>
         /// Returns the current dialect name
         /// </summary>
         /// <returns></returns>
@@ -528,7 +507,7 @@ namespace Dapper
             foreach (var type in tupleTypes)
             {
                 var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
-                if (!supportedType.Contains(underlyingType))
+                if (underlyingType != typeof(int) && underlyingType != typeof(uint) && underlyingType != typeof(long) && underlyingType != typeof(ulong) && underlyingType != typeof(short) && underlyingType != typeof(ushort) && underlyingType != typeof(Guid) && underlyingType != typeof(string))
                 {
                     throw new Exception($"Invalid type '{underlyingType}' in composite key.");
                 }
@@ -890,6 +869,7 @@ namespace Dapper
         #endregion
 
         #region Builders
+
         /// <summary>
         /// Append a Cached version of a strinbBuilderAction result based on a cacheKey
         /// </summary>
